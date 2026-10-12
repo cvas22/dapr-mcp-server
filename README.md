@@ -38,6 +38,8 @@ With `--http`, connect any MCP client to `http://localhost:8080/`. The container
 | Binary | Download from [Releases](https://github.com/dapr/dapr-mcp-server/releases) and place on `PATH` |
 | From source (Go 1.26.6+) | `go install github.com/dapr/dapr-mcp-server/cmd/dapr-mcp-server@latest` |
 
+The server is listed in the official [MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.dapr/dapr-mcp-server) as `io.github.dapr/dapr-mcp-server`, so MCP clients that browse the registry can install it as a container.
+
 ## Configuration
 
 The [configuration guide](https://docs.dapr.io/developing-ai/mcp/dapr-mcp-server/dapr-mcp-server-configuration/) has the full environment variable reference.
