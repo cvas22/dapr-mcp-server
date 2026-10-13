@@ -55,6 +55,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CHECK_JSONSCHEMA_VERSION: 0.38.2
+      # Bump together with "$schema" in server.json.
+      SERVER_JSON_SCHEMA: https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -62,7 +64,11 @@ jobs:
       - name: Validate against the MCP Registry schema
         run: |
           schema=$(jq -er '."$schema"' server.json)
-          pipx run --spec "check-jsonschema==${CHECK_JSONSCHEMA_VERSION}" check-jsonschema --schemafile "$schema" server.json
+          if [[ "$schema" != "$SERVER_JSON_SCHEMA" ]]; then
+            echo "::error file=server.json::server.json names schema '$schema', but CI expects '$SERVER_JSON_SCHEMA'. Update both together."
+            exit 1
+          fi
+          pipx run --spec "check-jsonschema==${CHECK_JSONSCHEMA_VERSION}" check-jsonschema --schemafile "$SERVER_JSON_SCHEMA" server.json
 
       - name: Check name matches the Dockerfile label
         run: |
