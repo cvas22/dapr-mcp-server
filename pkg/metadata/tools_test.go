@@ -229,12 +229,17 @@ func TestComponentsObserver(t *testing.T) {
 			mockClient := new(mocks.MockDaprClient)
 			mockClient.On("GetMetadata", mock.Anything).Return(tt.resp, tt.err)
 
+			var started int
 			var observed [][]ComponentInfo
 			h, _ := newTestHandler(mockClient)
-			WithComponentsObserver(func(c []ComponentInfo) { observed = append(observed, c) })(h)
+			WithComponentsObserver(func() func([]ComponentInfo) {
+				started++
+				return func(c []ComponentInfo) { observed = append(observed, c) }
+			})(h)
 
 			_, _, err := h.getComponents(context.Background(), &mcp.CallToolRequest{}, nil)
 			require.NoError(t, err)
+			assert.Equal(t, 1, started)
 			require.Len(t, observed, tt.wantCalls)
 			if tt.wantCalls > 0 {
 				assert.Equal(t, "statestore", observed[0][0].Name)

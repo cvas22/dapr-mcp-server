@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	dapr "github.com/dapr/go-sdk/client"
@@ -77,8 +78,13 @@ type toolSyncer struct {
 	metrics *telemetry.ToolMetrics
 	logger  *slog.Logger
 
+	// fetches numbers each component fetch as it starts,
+	// so a fetch that finishes after a newer one cannot undo the newer result.
+	fetches atomic.Uint64
+
 	mu         sync.Mutex
 	registered map[buildingBlock]bool
+	applied    uint64 // number of the newest fetch applied
 }
 
 // registerTools registers the core tools and the tools of each building block
@@ -95,7 +101,7 @@ func registerTools(ctx context.Context, server *mcp.Server, client dapr.Client, 
 	}
 
 	server.AddReceivingMiddleware(syncer.syncOnListTools)
-	metadata.RegisterTools(server, client, toolMetrics, metadata.WithComponentsObserver(syncer.apply))
+	metadata.RegisterTools(server, client, toolMetrics, metadata.WithComponentsObserver(syncer.startFetch))
 	invoke.RegisterTools(server, client, toolMetrics)
 	actor.RegisterTools(server, client, toolMetrics)
 
@@ -107,21 +113,34 @@ func registerTools(ctx context.Context, server *mcp.Server, client dapr.Client, 
 
 // refresh fetches the sidecar's components and updates the registered tools to match.
 func (s *toolSyncer) refresh(ctx context.Context) error {
+	done := s.startFetch()
 	components, err := metadata.GetLiveComponentList(ctx, s.client)
 	if err != nil {
 		return fmt.Errorf("get components: %w", err)
 	}
-	s.apply(components)
+	done(components)
 	return nil
+}
+
+// startFetch numbers a component fetch that is about to start
+// and returns the function that applies its result.
+func (s *toolSyncer) startFetch() func([]metadata.ComponentInfo) {
+	fetch := s.fetches.Add(1)
+	return func(components []metadata.ComponentInfo) { s.apply(fetch, components) }
 }
 
 // apply registers the tools of building blocks that gained their first component
 // and removes the tools of building blocks that lost their last one.
-func (s *toolSyncer) apply(components []metadata.ComponentInfo) {
+// It ignores the result of a fetch older than the newest one already applied.
+func (s *toolSyncer) apply(fetch uint64, components []metadata.ComponentInfo) {
 	present := presentBuildingBlocks(components)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if fetch < s.applied {
+		return
+	}
+	s.applied = fetch
 	for _, p := range componentPrefixes {
 		block, tools := p.block, toolsByBlock[p.block]
 		switch {

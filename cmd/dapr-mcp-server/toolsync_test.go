@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dapr/dapr-mcp-server/pkg/metadata"
 )
 
 // syncWait bounds how long a test waits for the tool list changed notification.
@@ -162,4 +164,19 @@ func TestListToolsSyncsOncePerPagedList(t *testing.T) {
 
 	require.Greater(t, pages, 1)
 	client.AssertNumberOfCalls(t, "GetMetadata", 1)
+}
+
+func TestOlderFetchDoesNotUndoNewerOne(t *testing.T) {
+	client := newTestDaprClient()
+	client.On("GetMetadata", mock.Anything).Return(metadataWithTypes(), nil)
+	_, syncer := newSyncedServer(t, client)
+
+	older := syncer.startFetch()
+	newer := syncer.startFetch()
+	newer([]metadata.ComponentInfo{{Name: "statestore", Type: "state.redis"}})
+	older(nil)
+
+	syncer.mu.Lock()
+	defer syncer.mu.Unlock()
+	assert.Equal(t, map[buildingBlock]bool{blockState: true}, syncer.registered)
 }

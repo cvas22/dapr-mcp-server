@@ -117,15 +117,20 @@ func GetLiveComponentList(ctx context.Context, client MetadataClient) ([]Compone
 type handler struct {
 	client    MetadataClient
 	inst      toolkit.Instrumentation
-	observers []func([]ComponentInfo)
+	observers []ComponentsObserver
 }
+
+// ComponentsObserver is called before each get_components fetch from the sidecar.
+// If the fetch succeeds, the function it returns is called with the component list.
+// Starting before the fetch lets the observer order the results of concurrent fetches.
+type ComponentsObserver func() func([]ComponentInfo)
 
 // Option configures the get_components tool.
 type Option func(*handler)
 
-// WithComponentsObserver calls observe with the component list each time get_components succeeds,
+// WithComponentsObserver tells observe about each get_components call,
 // so the caller can react to components the sidecar has loaded or unloaded since the last call.
-func WithComponentsObserver(observe func([]ComponentInfo)) Option {
+func WithComponentsObserver(observe ComponentsObserver) Option {
 	return func(h *handler) {
 		h.observers = append(h.observers, observe)
 	}
@@ -139,13 +144,18 @@ func (h *handler) getComponents(ctx context.Context, _ *mcp.CallToolRequest, _ a
 		return call.Fail(errClientNotInitialized), ComponentListWrapper{}, nil
 	}
 
+	done := make([]func([]ComponentInfo), 0, len(h.observers))
+	for _, observe := range h.observers {
+		done = append(done, observe())
+	}
+
 	components, err := GetLiveComponentList(ctx, h.client)
 	if err != nil {
 		return call.Fail(fmt.Errorf("fetch live Dapr component list: %w", err)), ComponentListWrapper{}, nil
 	}
 
-	for _, observe := range h.observers {
-		observe(components)
+	for _, d := range done {
+		d(components)
 	}
 
 	call.Succeed("components", len(components))
