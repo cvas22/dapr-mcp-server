@@ -35,6 +35,16 @@ jobs:
           fi
           echo "Version $VERSION is valid"
 
+      # The MCP Registry has no prerelease flag; only a semver suffix keeps a prerelease apart from a release.
+      # Checked here so the run fails before anything is published.
+      - name: Check prerelease version has a suffix
+        if: github.event.inputs.prerelease == 'true'
+        run: |
+          if [[ "$VERSION" != *-* ]]; then
+            echo "::error::Prerelease $VERSION has no semver suffix (e.g. v1.0.0-rc.1), so it would be published to the MCP Registry as a full release."
+            exit 1
+          fi
+
   test:
     name: Run Tests
     runs-on: ubuntu-latest
@@ -243,21 +253,11 @@ jobs:
       contents: read
       id-token: write
     env:
-      PRERELEASE: ${{ github.event.inputs.prerelease }}
       MCP_PUBLISHER_VERSION: v1.8.1
       MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-
-      # The registry has no prerelease flag; only a semver suffix keeps a prerelease apart from a release.
-      - name: Check prerelease version has a suffix
-        if: env.PRERELEASE == 'true'
-        run: |
-          if [[ "$VERSION" != *-* ]]; then
-            echo "::error::Prerelease $VERSION has no semver suffix (e.g. v1.0.0-rc.1), so it would be published to the MCP Registry as a full release."
-            exit 1
-          fi
 
       - name: Install mcp-publisher
         run: |
